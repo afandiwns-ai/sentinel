@@ -37,8 +37,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Initialize Gemini with safety for Vercel
+const getAiEngine = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || key === "undefined") return null;
+  return new GoogleGenAI({ apiKey: key });
+};
+
+const ai = getAiEngine();
 
 interface Finding {
   type: string;
@@ -124,6 +130,10 @@ export default function App() {
   };
 
   const generateAIInsight = async (data: ScanResult) => {
+    if (!ai) {
+      setAiInsight("AI Engine offline: Please set GEMINI_API_KEY in Vercel environment variables.");
+      return;
+    }
     try {
       const prompt = `You are a Senior Security Auditor. Analyze these website reconnaissance results:
       Target URL: ${data.url}
