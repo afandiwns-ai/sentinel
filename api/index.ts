@@ -1,9 +1,9 @@
 import express, { Request, Response, NextFunction } from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import bcrypt from "bcryptjs";
+import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
-import db from "../src/lib/db.js"; // Note: using .js for ESM compatibility with tsx
+import db from "../src/lib/db.js";
 
 const app = express();
 app.use(express.json());
@@ -12,12 +12,14 @@ const JWT_SECRET = process.env.JWT_SECRET || "securifi-secret-key-123";
 
 // Seed Default Admin User
 try {
-  const usersCount: any = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (usersCount.count === 0) {
+  const adminUser: any = db.prepare('SELECT * FROM users WHERE username = ?').get('admin');
+  if (!adminUser) {
     const defaultPassword = "admin";
-    const hashed = bcrypt.hashSync(defaultPassword, 10);
+    const hashed = bcryptjs.hashSync(defaultPassword, 10);
     db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('admin', hashed);
     console.log("Default user created: admin / admin");
+  } else {
+    console.log("Admin user already exists");
   }
 } catch (e) {
   console.error("Database seed failed:", e);
@@ -47,7 +49,7 @@ app.post("/api/auth/signup", async (req: Request, res: Response) => {
   if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
 
   try {
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = bcryptjs.hashSync(password, 10);
     const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
     const result = stmt.run(username, hashedPassword);
     res.json({ message: "Registration successful", userId: result.lastInsertRowid });
@@ -62,16 +64,25 @@ app.post("/api/auth/signup", async (req: Request, res: Response) => {
 
 app.post("/api/auth/login", async (req: Request, res: Response) => {
   const { username, password } = req.body;
+  console.log(`Login attempt for: ${username}`);
   
   try {
     const user: any = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    if (!user) {
+      console.log("User not found");
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const isValid = bcryptjs.compareSync(password, user.password_hash);
+    if (!isValid) {
+      console.log("Password mismatch");
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username });
   } catch (error: any) {
+    console.error("Login error:", error);
     res.status(500).json({ error: error.message });
   }
 });
