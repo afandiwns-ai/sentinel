@@ -3,26 +3,49 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import bcryptjs from "bcryptjs";
 import jwt from "jsonwebtoken";
-import db from "../src/lib/db.js";
+import Database from 'better-sqlite3';
+
+const db = new Database('securifi.db');
+
+// Initialize database schema
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    target_url TEXT NOT NULL,
+    scan_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    scan_data TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+  );
+`);
 
 const app = express();
 app.use(express.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "securifi-secret-key-123";
 
-// Seed Default Admin User
+// Seed/Update Default Admin User (Force Reset for Reliability)
 try {
+  const defaultPassword = "admin";
+  const hashed = bcryptjs.hashSync(defaultPassword, 10);
   const adminUser: any = db.prepare('SELECT * FROM users WHERE username = ?').get('admin');
+  
   if (!adminUser) {
-    const defaultPassword = "admin";
-    const hashed = bcryptjs.hashSync(defaultPassword, 10);
     db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('admin', hashed);
     console.log("Default user created: admin / admin");
   } else {
-    console.log("Admin user already exists");
+    // Force update password to 'admin' in case it was changed or corrupted
+    db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(hashed, 'admin');
+    console.log("Admin password verified and updated: admin / admin");
   }
 } catch (e) {
-  console.error("Database seed failed:", e);
+  console.error("Database seed/reset failed:", e);
 }
 
 // Auth Middleware
@@ -64,25 +87,26 @@ app.post("/api/auth/signup", async (req: Request, res: Response) => {
 
 app.post("/api/auth/login", async (req: Request, res: Response) => {
   const { username, password } = req.body;
-  console.log(`Login attempt for: ${username}`);
+  console.log(`[AUTH] Login attempt: username="${username}" password="${password}"`);
   
   try {
     const user: any = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
     if (!user) {
-      console.log("User not found");
+      console.log(`[AUTH] User "${username}" not found in database`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
     const isValid = bcryptjs.compareSync(password, user.password_hash);
     if (!isValid) {
-      console.log("Password mismatch");
+      console.log(`[AUTH] Password mismatch for user "${username}"`);
       return res.status(401).json({ error: "Invalid credentials" });
     }
 
+    console.log(`[AUTH] Login successful for user "${username}"`);
     const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, username: user.username });
   } catch (error: any) {
-    console.error("Login error:", error);
+    console.error("[AUTH] Login error:", error);
     res.status(500).json({ error: error.message });
   }
 });
