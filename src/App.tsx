@@ -95,6 +95,80 @@ export default function App() {
   const [isAuthorized, setIsAuthorized] = useState(true);
   const [activeView, setActiveView] = useState<'dashboard' | 'subdomains' | 'reports' | 'settings'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  
+  // Auth State
+  const [user, setUser] = useState<{ username: string } | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('securifi_token'));
+  const [isAuthMode, setIsAuthMode] = useState<'login' | 'signup'>('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (token) {
+      const storedUser = localStorage.getItem('securifi_user');
+      if (storedUser) setUser(JSON.parse(storedUser));
+      fetchHistory();
+    }
+  }, [token]);
+
+  const fetchHistory = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/history', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistory(data);
+      }
+    } catch (err) {
+      console.error("History fetch failed");
+    }
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthenticating(true);
+    const endpoint = isAuthMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authUsername, password: authPassword }),
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        if (isAuthMode === 'login') {
+          setToken(data.token);
+          setUser({ username: data.username });
+          localStorage.setItem('securifi_token', data.token);
+          localStorage.setItem('securifi_user', JSON.stringify({ username: data.username }));
+          toast.success(`Welcome back, ${data.username}`);
+        } else {
+          setIsAuthMode('login');
+          toast.success("Account created! Please login.");
+        }
+      } else {
+        toast.error(data.error || "Authentication failed");
+      }
+    } catch (err) {
+      toast.error("Auth connection error");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const logout = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('securifi_token');
+    localStorage.removeItem('securifi_user');
+    toast.info("Logged out successfully");
+  };
 
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,19 +188,26 @@ export default function App() {
       setScanProgress(30);
       const scanRes = await fetch('/api/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ url: targetUrl }),
       });
       
       const scanData = await scanRes.json();
       if (scanRes.ok) {
         setActiveScan(scanData);
+        fetchHistory(); // Refresh history after scan
         setScanProgress(60);
 
         // 2. Subdomain Enum
         const subRes = await fetch('/api/subdomains', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
           body: JSON.stringify({ domain: targetUrl }),
         });
         const subData = await subRes.json();
@@ -222,6 +303,75 @@ export default function App() {
     <div className="min-h-screen bg-[#050505] text-[#E5E5E5] flex font-sans selection:bg-emerald-500/30">
       <Toaster position="top-center" theme="dark" />
       
+      {/* Auth Overlay */}
+      <AnimatePresence>
+        {!token && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6 backdrop-blur-xl"
+          >
+            <Card className="w-full max-w-md bg-[#0A0A0A] border-white/10 shadow-2xl overflow-hidden relative">
+              <div className="absolute top-0 inset-x-0 h-1 bg-emerald-500" />
+              <CardHeader className="text-center pb-2">
+                <div className="w-16 h-16 bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center rounded-2xl mx-auto mb-6 transform rotate-3">
+                   <Shield className="w-8 h-8 text-emerald-500" />
+                </div>
+                <CardTitle className="font-serif italic text-3xl text-white">Sentinel X</CardTitle>
+                <CardDescription className="text-[10px] uppercase tracking-widest text-emerald-500 font-bold mt-2">
+                  Cognitive Security Intelligence
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleAuth} className="space-y-6 mt-4">
+                   <div className="space-y-2">
+                      <label className="text-[10px] text-white/30 uppercase tracking-widest font-mono">Operator ID</label>
+                      <Input 
+                        placeholder="username" 
+                        className="bg-black border-white/5 focus:border-emerald-500/50"
+                        value={authUsername}
+                        onChange={(e) => setAuthUsername(e.target.value)}
+                        required
+                      />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-[10px] text-white/30 uppercase tracking-widest font-mono">Access Key</label>
+                      <Input 
+                        type="password" 
+                        placeholder="••••••••" 
+                        className="bg-black border-white/5 focus:border-emerald-500/50"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        required
+                      />
+                   </div>
+                   <Button 
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-black font-bold h-11 rounded-none uppercase tracking-widest text-xs"
+                    disabled={isAuthenticating}
+                   >
+                     {isAuthenticating ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                      isAuthMode === 'login' ? "Establish Connection" : "Initialize Account"}
+                   </Button>
+                </form>
+              </CardContent>
+              <CardFooter className="flex flex-col gap-4">
+                 <button 
+                  onClick={() => setIsAuthMode(isAuthMode === 'login' ? 'signup' : 'login')}
+                  className="text-[10px] text-white/40 uppercase tracking-widest hover:text-emerald-500 transition-colors"
+                 >
+                   {isAuthMode === 'login' ? "Request new access credentials" : "Return to login terminal"}
+                 </button>
+                 <p className="text-[8px] text-white/20 text-center uppercase leading-relaxed font-mono">
+                   Unauthorized access is strictly prohibited. All activities are monitored and logged.
+                   By signing in, you agree to ethical usage policies.
+                 </p>
+              </CardFooter>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Sidebar - Integrated with Navigation State */}
       <aside className="w-16 border-r border-white/5 flex flex-col items-center py-8 gap-10 bg-black sticky top-0 h-screen hidden md:flex z-50">
         <div 
@@ -259,6 +409,15 @@ export default function App() {
           >
             <Lock className="w-6 h-6" />
           </div>
+        </div>
+
+        <div className="mt-auto flex flex-col gap-6 items-center">
+           <div className="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-[10px] font-bold text-emerald-500 uppercase">
+             {user?.username?.[0] || 'O'}
+           </div>
+           <button onClick={logout} title="Logout" className="text-white/20 hover:text-rose-500 transition-colors">
+             <Lock className="w-5 h-5" />
+           </button>
         </div>
       </aside>
 
@@ -601,30 +760,40 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="flex-1 flex flex-col gap-8"
             >
-              <h2 className="text-2xl font-serif italic text-white">Historical Intelligence Reports</h2>
+              <div className="flex justify-between items-end">
+                <h2 className="text-2xl font-serif italic text-white underline decoration-white/5 underline-offset-8">Intelligence Vault</h2>
+                <span className="text-[10px] text-white/30 font-mono uppercase tracking-[0.2em]">{history.length} Record(s) Archived</span>
+              </div>
+              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {activeScan ? (
-                   <Card className="bg-[#0A0A0A] border-emerald-500/30 p-6 flex flex-col gap-4 relative group overflow-hidden">
-                     <div className="absolute inset-x-0 top-0 h-1 bg-emerald-500" />
-                     <div className="flex justify-between items-start">
-                        <div className="flex flex-col">
-                           <span className="text-lg font-bold text-white font-mono break-all pr-8 uppercase">{activeScan.url.replace(/^https?:\/\//, '')}</span>
-                           <span className="text-[10px] text-white/40 font-mono mt-1 uppercase">Generated: {new Date().toLocaleDateString()}</span>
-                        </div>
-                        <Badge className="bg-rose-500 text-white border-none text-[9px]">{activeScan.findings.length} VULNS</Badge>
-                     </div>
-                     <Separator className="bg-white/5" />
-                     <p className="text-[10px] text-white/40 leading-relaxed italic">
-                        Passive reconnaissance report covering security headers, SSL status, and attack surface mapping.
-                     </p>
-                     <Button onClick={generatePDF} className="mt-4 w-full bg-white/5 border border-white/20 hover:bg-emerald-500 hover:text-black font-bold uppercase tracking-widest text-[9px] h-10 transition-all rounded-none">
-                        Export New PDF Bundle
-                     </Button>
-                   </Card>
+                {history.length > 0 ? (
+                   history.map((record, idx) => (
+                    <Card key={record.id} className="bg-[#0A0A0A] border-white/5 hover:border-emerald-500/30 p-6 flex flex-col gap-4 relative group overflow-hidden transition-all duration-500 cursor-pointer" onClick={() => { setActiveScan(record.scan_data); setActiveView('dashboard'); }}>
+                      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="flex justify-between items-start">
+                         <div className="flex flex-col min-w-0">
+                            <span className="text-base font-bold text-white font-mono break-all pr-4 uppercase truncate">{record.target_url.replace(/^https?:\/\//, '')}</span>
+                            <span className="text-[9px] text-white/40 font-mono mt-1 uppercase">ARCHIVE_ID: {record.id.toString().padStart(4, '0')} • {new Date(record.scan_date).toLocaleDateString()}</span>
+                         </div>
+                         <div className="w-8 h-8 rounded bg-white/5 flex items-center justify-center group-hover:bg-emerald-500/10 transition-colors">
+                           <FileText className="w-4 h-4 text-white/20 group-hover:text-emerald-500 transition-colors" />
+                         </div>
+                      </div>
+                      <Separator className="bg-white/5" />
+                      <div className="flex gap-2">
+                        <Badge className="bg-white/5 text-white border-none text-[8px] uppercase px-2">{record.scan_data.findings.length} ISSUES</Badge>
+                        <Badge className="bg-emerald-500/10 text-emerald-500 border-none text-[8px] uppercase px-2">{record.scan_data.status} OK</Badge>
+                      </div>
+                      <p className="text-[10px] text-white/30 leading-relaxed italic line-clamp-2">
+                         Technical security audit containing {record.scan_data.techStack.join(', ') || 'undisclosed stack'} fingerprinting and vulnerability analysis.
+                      </p>
+                    </Card>
+                   ))
                 ) : (
                    <div className="col-span-full h-96 border border-dashed border-white/10 flex flex-col items-center justify-center opacity-30 mt-12 rounded-xl">
                       <FileText className="w-16 h-16 mb-4" />
-                      <p className="font-mono text-xs uppercase tracking-widest">Archive Vault Empty</p>
+                      <p className="font-mono text-xs uppercase tracking-widest">No Intelligence Records Found</p>
+                      <Button variant="ghost" onClick={() => setActiveView('dashboard')} className="mt-6 text-[10px] uppercase tracking-widest hover:text-emerald-500">Initiate First Scan</Button>
                    </div>
                 )}
               </div>

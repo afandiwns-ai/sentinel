@@ -1,12 +1,93 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import db from "../src/lib/db.js"; // Note: using .js for ESM compatibility with tsx
 
 const app = express();
 app.use(express.json());
 
-// Reusable Scan Logic
-app.post("/api/scan", async (req: Request, res: Response) => {
+const JWT_SECRET = process.env.JWT_SECRET || "securifi-secret-key-123";
+
+// Seed Default Admin User
+try {
+  const usersCount: any = db.prepare('SELECT COUNT(*) as count FROM users').get();
+  if (usersCount.count === 0) {
+    const defaultPassword = "admin";
+    const hashed = bcrypt.hashSync(defaultPassword, 10);
+    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('admin', hashed);
+    console.log("Default user created: admin / admin");
+  }
+} catch (e) {
+  console.error("Database seed failed:", e);
+}
+
+// Auth Middleware
+interface AuthRequest extends Request {
+  user?: { id: number; username: string };
+}
+
+const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: "Unauthorized: No token provided" });
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: "Forbidden: Invalid token" });
+    req.user = user;
+    next();
+  });
+};
+
+// Auth Routes
+app.post("/api/auth/signup", async (req: Request, res: Response) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "Username and password are required" });
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
+    const result = stmt.run(username, hashedPassword);
+    res.json({ message: "Registration successful", userId: result.lastInsertRowid });
+  } catch (error: any) {
+    if (error.code === 'SQLITE_CONSTRAINT') {
+      res.status(400).json({ error: "Username already exists" });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+app.post("/api/auth/login", async (req: Request, res: Response) => {
+  const { username, password } = req.body;
+  
+  try {
+    const user: any = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, username: user.username });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Scan History Routes
+app.get("/api/history", authenticateToken, (req: AuthRequest, res: Response) => {
+  try {
+    const scans = db.prepare('SELECT * FROM scans WHERE user_id = ? ORDER BY scan_date DESC').all(req.user?.id);
+    res.json(scans.map((s: any) => ({ ...s, scan_data: JSON.parse(s.scan_data) })));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reusable Scan Logic (Protected)
+app.post("/api/scan", authenticateToken, async (req: AuthRequest, res: Response) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required" });
 
@@ -137,7 +218,7 @@ app.post("/api/scan", async (req: Request, res: Response) => {
       discoveredPaths,
     };
 
-    res.json({
+    const scanResult = {
       url,
       status: response.status,
       responseTime: Date.now() - startTime,
@@ -147,7 +228,17 @@ app.post("/api/scan", async (req: Request, res: Response) => {
       scrapedData: metadata,
       intel,
       rawHtmlSnippet: response.data.toString().substring(0, 1000),
-    });
+    };
+
+    // Save to History
+    try {
+      const stmt = db.prepare('INSERT INTO scans (user_id, target_url, scan_data) VALUES (?, ?, ?)');
+      stmt.run(req.user?.id, url, JSON.stringify(scanResult));
+    } catch (dbErr) {
+      console.error("Failed to save scan to history:", dbErr);
+    }
+
+    res.json(scanResult);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
