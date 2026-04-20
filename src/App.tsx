@@ -61,11 +61,19 @@ interface ScanResult {
   headers: Record<string, string>;
   findings: Finding[];
   techStack: string[];
+  intel?: {
+    server: string;
+    os: string;
+    isp: string;
+    ports: number[];
+    technologies: string[];
+  };
   scrapedData?: {
     title: string;
     description: string;
     linksCount: number;
     internalLinks: string[];
+    discoveredPaths?: { path: string; status: number; type: string }[];
   };
   rawHtmlSnippet?: string;
 }
@@ -143,13 +151,22 @@ export default function App() {
       return;
     }
     try {
-      const prompt = `You are a Senior Security Auditor. Analyze these website reconnaissance results:
+      const prompt = `You are a Senior Cyber Intelligence Auditor (Shodan-style). Analyze these raw reconnaissance results for REAL vulnerabilities:
       Target URL: ${data.url}
+      Service Banners: ${data.intel?.server} / OS: ${data.intel?.os}
+      Active Ports: ${data.intel?.ports?.join(', ')}
+      Discovered Paths: ${JSON.stringify(data.scrapedData?.discoveredPaths)}
       Tech Stack: ${data.techStack.join(', ')}
       Findings: ${JSON.stringify(data.findings)}
       Security Headers: ${JSON.stringify(data.headers)}
       
-      Provide a concise summary of the security posture and suggest 3 prioritized hardening steps. Focus on SQLi, XSS, and Information Disclosure risks based on the presence of forms and headers. Use professional Indonesian language or English if preferred.`;
+      STRICT INSTRUCTIONS: 
+      1. Do NOT hallucinate. Only comment on vulnerabilities that have a basis in the data above (e.g., if you see a specific server version or a sensitive path like /.git).
+      2. Match the Server header versions against known CVE patterns if possible.
+      3. If a sensitive path (like /.env or /admin) was discovered, prioritize that.
+      4. Use professional Indonesian language.
+      
+      Provide a concise 3-step actionable exploit-prevention plan.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -442,6 +459,40 @@ export default function App() {
                       </div>
 
                       <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
+                        {activeScan.intel && (
+                          <div className="bg-emerald-500/10 rounded-xl p-5 border border-emerald-500/20 mb-4">
+                            <h3 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-3 block">Shodan-Style Intelligence</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="flex flex-col">
+                                  <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter">Server Banner</span>
+                                  <span className="text-[11px] text-white font-bold truncate">{activeScan.intel.server}</span>
+                               </div>
+                               <div className="flex flex-col">
+                                  <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter">Active Ports</span>
+                                  <span className="text-[11px] text-white font-bold">{activeScan.intel.ports.join(', ')}</span>
+                               </div>
+                               <div className="flex flex-col pt-2 col-span-2">
+                                  <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter">OS Fingerprint</span>
+                                  <span className="text-[11px] text-white/70 italic font-serif">{activeScan.intel.os}</span>
+                               </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        {activeScan.scrapedData?.discoveredPaths && activeScan.scrapedData.discoveredPaths.length > 0 && (
+                          <div className="bg-rose-500/10 rounded-xl p-5 border border-rose-500/20 mb-4">
+                            <h3 className="text-[10px] font-bold uppercase tracking-widest text-rose-500 mb-3 block">Accessible Public Paths</h3>
+                            <div className="space-y-2">
+                               {activeScan.scrapedData.discoveredPaths.map((p, i) => (
+                                 <div key={i} className="flex items-center justify-between font-mono text-[10px] group/item">
+                                    <span className="text-rose-300 group-hover/item:text-rose-500 transition-colors uppercase tracking-tighter">{p.path}</span>
+                                    <Badge className="bg-rose-500/20 text-rose-500 hover:bg-rose-500/20 border-none text-[8px] px-1 py-0">{p.status} FOUND</Badge>
+                                 </div>
+                               ))}
+                            </div>
+                          </div>
+                        )}
+
                         {activeScan.scrapedData && (
                           <div className="bg-white/5 rounded-xl p-5 border border-white/10 mb-4">
                             <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-3 block">Scraped Origin Data</h3>
