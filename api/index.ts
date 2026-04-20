@@ -82,6 +82,22 @@ app.post("/api/scan", async (req: Request, res: Response) => {
     if ($('script[src*="jquery"]').length) techStack.push("jQuery");
     if ($('meta[name="generator"]').length) techStack.push($('meta[name="generator"]').attr('content'));
 
+    // Enhanced Scraping (Firecrawl-like link discovery)
+    const links: string[] = [];
+    $('a[href]').each((_, el) => {
+      const href = $(el).attr('href');
+      if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+        links.push(href);
+      }
+    });
+
+    const metadata = {
+      title: $('title').text(),
+      description: $('meta[name="description"]').attr('content') || 'Missing',
+      linksCount: links.length,
+      internalLinks: links.filter(l => l.startsWith('/') || l.includes(url.replace(/^https?:\/\//, ''))).slice(0, 20),
+    };
+
     res.json({
       url,
       status: response.status,
@@ -89,6 +105,7 @@ app.post("/api/scan", async (req: Request, res: Response) => {
       headers: securityHeaders,
       techStack,
       findings,
+      scrapedData: metadata,
       rawHtmlSnippet: response.data.toString().substring(0, 500),
     });
   } catch (error: any) {

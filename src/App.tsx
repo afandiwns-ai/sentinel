@@ -61,6 +61,12 @@ interface ScanResult {
   headers: Record<string, string>;
   findings: Finding[];
   techStack: string[];
+  scrapedData?: {
+    title: string;
+    description: string;
+    linksCount: number;
+    internalLinks: string[];
+  };
   rawHtmlSnippet?: string;
 }
 
@@ -77,7 +83,9 @@ export default function App() {
   const [subdomains, setSubdomains] = useState<Subdomain[]>([]);
   const [aiInsight, setAiInsight] = useState<string>('');
   const [scanProgress, setScanProgress] = useState(0);
-  const [isAuthorized, setIsAuthorized] = useState(true); // Default to true since user declined Firebase, using simple UI guard
+  const [isAuthorized, setIsAuthorized] = useState(true);
+  const [activeView, setActiveView] = useState<'dashboard' | 'subdomains' | 'reports' | 'settings'>('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,214 +203,420 @@ export default function App() {
     <div className="min-h-screen bg-[#050505] text-[#E5E5E5] flex font-sans selection:bg-emerald-500/30">
       <Toaster position="top-center" theme="dark" />
       
-      {/* Sidebar - Inspired by Design HTML */}
-      <aside className="w-16 border-r border-white/5 flex flex-col items-center py-8 gap-10 bg-black sticky top-0 h-screen hidden md:flex">
-        <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center rounded-lg">
+      {/* Sidebar - Integrated with Navigation State */}
+      <aside className="w-16 border-r border-white/5 flex flex-col items-center py-8 gap-10 bg-black sticky top-0 h-screen hidden md:flex z-50">
+        <div 
+          onClick={() => setActiveView('dashboard')}
+          className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center rounded-lg cursor-pointer hover:bg-emerald-500/20 transition-all"
+        >
           <Shield className="w-6 h-6 text-emerald-500" />
         </div>
-        <div className="flex flex-col gap-8 opacity-40">
-          <Globe className="w-6 h-6 cursor-pointer hover:text-emerald-500 transition-colors" />
-          <Terminal className="w-6 h-6 text-emerald-500 opacity-100" />
-          <FileText className="w-6 h-6 cursor-pointer hover:text-emerald-500 transition-colors" />
-          <Lock className="w-6 h-6 cursor-pointer hover:text-emerald-500 transition-colors" />
+        <div className="flex flex-col gap-8">
+          <div 
+            onClick={() => setActiveView('dashboard')}
+            title="Dashboard"
+            className={`cursor-pointer transition-all hover:text-emerald-500 ${activeView === 'dashboard' ? 'text-emerald-500 opacity-100' : 'text-white/40'}`}
+          >
+            <Layout className="w-6 h-6" />
+          </div>
+          <div 
+            onClick={() => setActiveView('subdomains')}
+            title="Subdomains"
+            className={`cursor-pointer transition-all hover:text-emerald-500 ${activeView === 'subdomains' ? 'text-emerald-500 opacity-100' : 'text-white/40'}`}
+          >
+            <Globe className="w-6 h-6" />
+          </div>
+          <div 
+            onClick={() => setActiveView('reports')}
+            title="Reports"
+            className={`cursor-pointer transition-all hover:text-emerald-500 ${activeView === 'reports' ? 'text-emerald-500 opacity-100' : 'text-white/40'}`}
+          >
+            <FileText className="w-6 h-6" />
+          </div>
+          <div 
+            onClick={() => setActiveView('settings')}
+            title="Settings"
+            className={`cursor-pointer transition-all hover:text-emerald-500 ${activeView === 'settings' ? 'text-emerald-500 opacity-100' : 'text-white/40'}`}
+          >
+            <Lock className="w-6 h-6" />
+          </div>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col p-8 max-w-[1400px] mx-auto w-full overflow-x-hidden">
-        {/* Updated Header */}
-        <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
-          <div className="flex flex-col">
-            <h1 className="font-serif italic text-4xl text-white">
-              Sentinel X
-              <span className="text-emerald-500 font-sans not-italic text-sm ml-3 tracking-[0.3em] uppercase align-middle">
-                Vulnerability Intelligence
-              </span>
-            </h1>
-            <p className="text-[10px] text-white/40 mt-1 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-              Core System Engine • Auth Status: Authorized (Level 4)
-            </p>
-          </div>
-
-          <form onSubmit={handleScan} className="flex gap-4 items-center w-full md:w-auto">
-            <div className="flex items-center bg-[#111] border border-white/10 rounded-full px-4 py-2 flex-1 md:w-96 group focus-within:border-emerald-500/50 transition-all">
-              <span className="text-[10px] text-emerald-500 font-mono mr-3 animate-pulse font-bold hidden sm:inline uppercase">Target_URL</span>
-              <Input 
-                placeholder="https://api.nexus-corp.internal" 
-                className="bg-transparent border-none focus-visible:ring-0 text-sm p-0 h-auto font-mono text-white/70 placeholder:text-white/20"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                disabled={isLoading}
-              />
+      {/* Mobile Menu Overlay */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0, x: -100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+            className="fixed inset-0 bg-black z-[100] p-8 flex flex-col gap-8 md:hidden"
+          >
+            <div className="flex justify-between items-center mb-10">
+               <Shield className="w-10 h-10 text-emerald-500" />
+               <Button variant="ghost" onClick={() => setIsMobileMenuOpen(false)} className="text-white">Close</Button>
             </div>
-            <Button 
-              type="submit" 
-              className="bg-emerald-600 hover:bg-emerald-500 text-black font-bold px-8 py-2 rounded-full text-[10px] transition-all uppercase tracking-[0.2em] h-10 border-none"
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Start New Scan"}
+            <nav className="flex flex-col gap-6">
+              <Button variant="ghost" onClick={() => { setActiveView('dashboard'); setIsMobileMenuOpen(false); }} className={`text-xl justify-start ${activeView === 'dashboard' ? 'text-emerald-500' : 'text-white/50'}`}>Dashboard</Button>
+              <Button variant="ghost" onClick={() => { setActiveView('subdomains'); setIsMobileMenuOpen(false); }} className={`text-xl justify-start ${activeView === 'subdomains' ? 'text-emerald-500' : 'text-white/50'}`}>Subdomains</Button>
+              <Button variant="ghost" onClick={() => { setActiveView('reports'); setIsMobileMenuOpen(false); }} className={`text-xl justify-start ${activeView === 'reports' ? 'text-emerald-500' : 'text-white/50'}`}>Reports</Button>
+              <Button variant="ghost" onClick={() => { setActiveView('settings'); setIsMobileMenuOpen(false); }} className={`text-xl justify-start ${activeView === 'settings' ? 'text-emerald-500' : 'text-white/50'}`}>Settings</Button>
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <main className="flex-1 flex flex-col p-8 max-w-[1400px] mx-auto w-full overflow-x-hidden">
+        {/* Updated Header with Mobile Trigger */}
+        <header className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" className="md:hidden p-0 h-auto hover:bg-transparent" onClick={() => setIsMobileMenuOpen(true)}>
+               <Layout className="w-8 h-8 text-white" />
             </Button>
-          </form>
+            <div className="flex flex-col">
+              <h1 className="font-serif italic text-4xl text-white">
+                Sentinel X
+                <span className="text-emerald-500 font-sans not-italic text-sm ml-3 tracking-[0.3em] uppercase align-middle">
+                  Vulnerability Intelligence
+                </span>
+              </h1>
+              <p className="text-[10px] text-white/40 mt-1 uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                Mode: {activeView.toUpperCase()} • Level 4 Security
+              </p>
+            </div>
+          </div>
         </header>
 
-        {isLoading && (
-          <div className="mb-8 max-w-xl">
-             <div className="flex justify-between text-[10px] text-white/40 mb-2 font-mono uppercase tracking-widest">
-                <span>Engines Initializing...</span>
-                <span>{scanProgress}%</span>
-              </div>
-              <Progress value={scanProgress} className="h-0.5 bg-white/5" indicatorClassName="bg-emerald-500" />
-          </div>
-        )}
-
-        {!activeScan && !isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-80 mt-12 group">
-             <Card className="bg-[#0A0A0A] border-white/5 hover:border-emerald-500/30 transition-all duration-500 p-2">
-               <CardHeader>
-                 <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 flex items-center justify-center rounded-lg mb-4">
-                   <Terminal className="w-5 h-5 text-blue-500" />
-                 </div>
-                 <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">Automated Scan</CardTitle>
-                 <CardDescription className="text-zinc-400">Deep header analysis and tech stack fingerprinting.</CardDescription>
-               </CardHeader>
-             </Card>
-             <Card className="bg-[#0A0A0A] border-white/5 hover:border-purple-500/30 transition-all duration-500 p-2">
-               <CardHeader>
-                 <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 flex items-center justify-center rounded-lg mb-4">
-                   <Server className="w-5 h-5 text-purple-500" />
-                 </div>
-                 <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">Subdomain Enum</CardTitle>
-                 <CardDescription className="text-zinc-400">Passive discovery of public attack surface.</CardDescription>
-               </CardHeader>
-             </Card>
-             <Card className="bg-[#0A0A0A] border-white/5 hover:border-amber-500/30 transition-all duration-500 p-2">
-               <CardHeader>
-                 <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center rounded-lg mb-4">
-                   <AlertCircle className="w-5 h-5 text-amber-500" />
-                 </div>
-                 <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">AI Threat Intel</CardTitle>
-                 <CardDescription className="text-zinc-400">Gemini-powered vulnerability risk assessment.</CardDescription>
-               </CardHeader>
-             </Card>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {activeScan && (
+        {/* View Switcher Logic */}
+        <AnimatePresence mode="wait">
+          {activeView === 'dashboard' && (
             <motion.div 
+              key="dashboard"
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.02 }}
+              className="flex flex-col flex-1"
+            >
+              <form onSubmit={handleScan} className="flex gap-4 items-center w-full max-w-4xl mb-12">
+                <div className="flex items-center bg-[#111] border border-white/10 rounded-full px-4 py-2 flex-1 group focus-within:border-emerald-500/50 transition-all">
+                  <span className="text-[10px] text-emerald-500 font-mono mr-3 animate-pulse font-bold hidden sm:inline uppercase">Target_URL</span>
+                  <Input 
+                    placeholder="https://api.nexus-corp.internal" 
+                    className="bg-transparent border-none focus-visible:ring-0 text-sm p-0 h-auto font-mono text-white/70 placeholder:text-white/20"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    disabled={isLoading}
+                  />
+                </div>
+                <Button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-black font-bold px-8 py-2 rounded-full text-[10px] transition-all uppercase tracking-[0.2em] h-10 border-none shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                  disabled={isLoading}
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Run Scan"}
+                </Button>
+              </form>
+
+              {isLoading && (
+                <div className="mb-12 max-w-xl">
+                   <div className="flex justify-between text-[10px] text-white/40 mb-2 font-mono uppercase tracking-widest">
+                      <span>Engines Initializing...</span>
+                      <span>{scanProgress}%</span>
+                    </div>
+                    <Progress value={scanProgress} className="h-0.5 bg-white/5" indicatorClassName="bg-emerald-500" />
+                </div>
+              )}
+
+              {!activeScan && !isLoading && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-80 mt-12 group">
+                   <Card className="bg-[#0A0A0A] border-white/5 hover:border-emerald-500/30 transition-all duration-500 p-2 transform hover:-translate-y-1">
+                     <CardHeader>
+                       <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 flex items-center justify-center rounded-lg mb-4">
+                         <Terminal className="w-5 h-5 text-blue-500" />
+                       </div>
+                       <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">Automated Recon</CardTitle>
+                       <CardDescription className="text-zinc-400">Deep header analysis and tech stack fingerprinting.</CardDescription>
+                     </CardHeader>
+                   </Card>
+                   <Card className="bg-[#0A0A0A] border-white/5 hover:border-purple-500/30 transition-all duration-500 p-2 transform hover:-translate-y-1">
+                     <CardHeader>
+                       <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 flex items-center justify-center rounded-lg mb-4">
+                         <Server className="w-5 h-5 text-purple-500" />
+                       </div>
+                       <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">Subdomain Mapper</CardTitle>
+                       <CardDescription className="text-zinc-400">Passive discovery of public attack surface.</CardDescription>
+                     </CardHeader>
+                   </Card>
+                   <Card className="bg-[#0A0A0A] border-white/5 hover:border-amber-500/30 transition-all duration-500 p-2 transform hover:-translate-y-1">
+                     <CardHeader>
+                       <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 flex items-center justify-center rounded-lg mb-4">
+                         <AlertCircle className="w-5 h-5 text-amber-500" />
+                       </div>
+                       <CardTitle className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">AI Threat Logic</CardTitle>
+                       <CardDescription className="text-zinc-400">Gemini-powered vulnerability risk assessment.</CardDescription>
+                     </CardHeader>
+                   </Card>
+                </div>
+              )}
+
+              {activeScan && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
+                  {/* Main Content Pane */}
+                  <div className="lg:col-span-8 flex flex-col gap-8">
+                    <Card className="bg-[#0A0A0A] border-white/5 rounded-2xl flex-1 overflow-hidden flex flex-col min-h-[400px]">
+                      <div className="p-6 border-b border-white/5 flex justify-between items-center bg-black/20">
+                        <h2 className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold">Vulnerability Live Feed</h2>
+                        <span className={`text-[10px] font-mono font-bold animate-pulse ${activeScan.findings.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                          {isLoading ? 'ANALYZING...' : `SCAN COMPLETE - ${activeScan.findings.length} ISSUES`}
+                        </span>
+                      </div>
+                      
+                      <ScrollArea className="flex-1 p-6">
+                        <div className="space-y-4">
+                          {activeScan.findings.length > 0 ? (
+                            activeScan.findings.map((finding, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-4 bg-white/5 border-l-4 border-emerald-500 rounded-r-lg group hover:bg-white/[0.08] transition-all">
+                                 <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-white tracking-wide uppercase">{finding.item}</span>
+                                    <span className="text-[10px] text-white/40 font-mono mt-1">{finding.description}</span>
+                                 </div>
+                                 <Badge className={`${getSeverityColor(finding.severity)} text-[9px] px-3 py-0.5 rounded-full font-bold uppercase tracking-widest border-none`} variant="outline">
+                                   {finding.severity}
+                                 </Badge>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="h-[300px] flex flex-col items-center justify-center opacity-20">
+                               <Shield className="w-16 h-16 mb-4 text-emerald-500" />
+                               <p className="font-mono text-xs uppercase tracking-widest font-bold">Safe Environment Verified</p>
+                            </div>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </Card>
+
+                    {/* Console Output */}
+                    <div className="bg-black border border-white/10 rounded-xl p-5 h-56 font-mono text-[11px] text-emerald-500/80 overflow-hidden leading-relaxed shadow-inner shadow-black/50">
+                      <div className="opacity-30">[{new Date().toLocaleTimeString()}] INITIALIZING SECURITY SUBSYSTEMS...</div>
+                      <div className="opacity-50">[{new Date().toLocaleTimeString()}] TARGET_URL: {activeScan.url}</div>
+                      <div className="opacity-70">[{new Date().toLocaleTimeString()}] ANALYZING HEADERS: {Object.keys(activeScan.headers).length} POLICIES FOUND</div>
+                      <div className="opacity-90">[{new Date().toLocaleTimeString()}] TECH_STACK_HASH: {activeScan.techStack.join(', ') || 'GENERIC_V1'}</div>
+                      <div className="text-white animate-pulse">[{new Date().toLocaleTimeString()}] CRAWLING DATA... MAPPING COMPLETE.</div>
+                      <div className="text-emerald-400 mt-2">[{new Date().toLocaleTimeString()}] AUDIT_LOG: SUCCESSFUL DATA SCRAPE FROM ORIGIN.</div>
+                    </div>
+                  </div>
+
+                  {/* Sidebar Content Pane */}
+                  <div className="lg:col-span-4 flex flex-col gap-8">
+                    <Card className="bg-[#0A0A0A] border-white/5 rounded-2xl p-6 flex flex-col overflow-hidden relative group">
+                      <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
+                        <AlertTriangle className="w-5 h-5 text-emerald-500" />
+                      </div>
+                      <h2 className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold mb-8">Intelligence Summary</h2>
+                      
+                      <div className="space-y-8 flex-1">
+                        <div className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-emerald-500/30 transition-all">
+                           <div className="flex items-center justify-between mb-4">
+                             <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Security Report Engine</span>
+                             <Download className="w-4 h-4 text-emerald-500" />
+                           </div>
+                           <p className="text-[10px] text-white/40 leading-relaxed mb-6 italic">
+                             Automated generation of vulnerability intelligence across {activeScan.findings.length} critical vectors.
+                           </p>
+                           <Button onClick={generatePDF} className="w-full py-2 bg-white/5 border border-white/20 hover:bg-emerald-500 hover:text-black text-[10px] uppercase tracking-widest font-bold transition-all h-9 rounded-none">
+                             Download Technical PDF
+                           </Button>
+                        </div>
+
+                        <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
+                           <h3 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-3 flex items-center gap-2">
+                             <Loader2 className="w-3 h-3 animate-spin" /> AI Auditor Recommendations
+                           </h3>
+                           <ScrollArea className="h-64">
+                             <p className="text-[11px] text-white/50 leading-relaxed whitespace-pre-line font-mono pr-4">
+                               {aiInsight || "Awaiting intelligence processing..."}
+                             </p>
+                           </ScrollArea>
+                        </div>
+                      </div>
+
+                      <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
+                        {activeScan.scrapedData && (
+                          <div className="bg-white/5 rounded-xl p-5 border border-white/10 mb-4">
+                            <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-3 block">Scraped Origin Data</h3>
+                            <div className="space-y-2">
+                               <div className="flex flex-col">
+                                  <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter">Page Title</span>
+                                  <span className="text-[11px] text-emerald-500 font-bold truncate max-w-full block">{activeScan.scrapedData.title || 'Untitled Archive'}</span>
+                               </div>
+                               <div className="flex flex-col pt-2">
+                                  <span className="text-[9px] text-white/20 uppercase font-mono tracking-tighter">Link Extraction</span>
+                                  <span className="text-[11px] text-white/70">{activeScan.scrapedData.linksCount} internal paths mapped</span>
+                               </div>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-white/30 uppercase tracking-widest">Res. Time</span>
+                          <span className="text-emerald-500">{activeScan.responseTime}ms</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono">
+                          <span className="text-white/30 uppercase tracking-widest">Server Status</span>
+                          <span className="text-emerald-500">{activeScan.status} OK</span>
+                        </div>
+                      </div>
+                    </Card>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {activeView === 'subdomains' && (
+            <motion.div 
+              key="subdomains"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1"
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col gap-8"
             >
-              {/* Main Content Pane */}
-              <div className="lg:col-span-8 flex flex-col gap-8">
-                <Card className="bg-[#0A0A0A] border-white/5 rounded-2xl flex-1 overflow-hidden flex flex-col">
-                  <div className="p-6 border-b border-white/5 flex justify-between items-center bg-black/20">
-                    <h2 className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold">Vulnerability Live Feed</h2>
-                    <span className={`text-[10px] font-mono font-bold animate-pulse ${activeScan.findings.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                      {isLoading ? 'ANALYZING...' : `SCAN COMPLETE - ${activeScan.findings.length} ISSUES`}
-                    </span>
-                  </div>
-                  
-                  <ScrollArea className="flex-1 p-6">
-                    <div className="space-y-4">
-                      {activeScan.findings.length > 0 ? (
-                        activeScan.findings.map((finding, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-4 bg-white/5 border-l-4 border-emerald-500 rounded-r-lg group hover:bg-white/[0.08] transition-all">
-                             <div className="flex flex-col">
-                                <span className="text-xs font-bold text-white tracking-wide uppercase">{finding.item}</span>
-                                <span className="text-[10px] text-white/40 font-mono mt-1">{finding.description}</span>
-                             </div>
-                             <Badge className={`${getSeverityColor(finding.severity)} text-[9px] px-3 py-0.5 rounded-full font-bold uppercase tracking-widest border-none`} variant="outline">
-                               {finding.severity}
-                             </Badge>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="h-[300px] flex flex-col items-center justify-center opacity-20">
-                           <Shield className="w-16 h-16 mb-4 text-emerald-500" />
-                           <p className="font-mono text-xs uppercase tracking-widest font-bold">No Critical Vulnerabilities Leak</p>
-                        </div>
-                      )}
-                    </div>
-                  </ScrollArea>
+              <h2 className="text-2xl font-serif italic text-white flex items-center gap-4">
+                Domain Surface Mapping
+                <Badge variant="outline" className="text-[9px] uppercase border-emerald-500/30 text-emerald-500">Active Recon</Badge>
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <Card className="bg-[#0A0A0A] border-white/5 p-6 flex flex-col">
+                  <span className="text-[10px] text-white/30 uppercase tracking-widest mb-2 font-bold font-mono">Total Hosts</span>
+                  <span className="text-3xl font-mono text-white">{subdomains.length || '---'}</span>
                 </Card>
-
-                {/* Console Output */}
-                <div className="bg-black border border-white/10 rounded-xl p-5 h-56 font-mono text-[11px] text-emerald-500/80 overflow-hidden leading-relaxed shadow-inner shadow-black/50">
-                  <div className="opacity-30">[{new Date().toLocaleTimeString()}] INITIALIZING SECURITY SUBSYSTEMS...</div>
-                  <div className="opacity-50">[{new Date().toLocaleTimeString()}] TARGET_URL: {activeScan.url}</div>
-                  <div className="opacity-70">[{new Date().toLocaleTimeString()}] ANALYZING HEADERS: {Object.keys(activeScan.headers).length} POLICIES FOUND</div>
-                  <div className="opacity-90">[{new Date().toLocaleTimeString()}] TECH_STACK_HASH: {activeScan.techStack.join(', ') || 'GENERIC_V1'}</div>
-                  <div className="text-white animate-pulse">[{new Date().toLocaleTimeString()}] CRAWLING DATA... MAPPING COMPLETE.</div>
-                  <div className="text-emerald-400 mt-2">[{new Date().toLocaleTimeString()}] AUDIT_LOG: SUCCESSFUL DATA SCRAPE FROM ORIGIN.</div>
-                </div>
+                <Card className="bg-[#0A0A0A] border-white/5 p-6 flex flex-col">
+                  <span className="text-[10px] text-white/30 uppercase tracking-widest mb-2 font-bold font-mono">Unique IPs</span>
+                  <span className="text-3xl font-mono text-white">{new Set(subdomains.map(s => s.ip)).size || '---'}</span>
+                </Card>
               </div>
 
-              {/* Sidebar Content Pane */}
-              <div className="lg:col-span-4 flex flex-col gap-8">
-                <Card className="bg-[#0A0A0A] border-white/5 rounded-2xl p-6 flex flex-col overflow-hidden relative group">
-                  <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-100 transition-opacity">
-                    <AlertTriangle className="w-5 h-5 text-emerald-500" />
-                  </div>
-                  <h2 className="text-[10px] uppercase tracking-[0.3em] text-white/50 font-bold mb-8">Intelligence Summary</h2>
-                  
-                  <div className="space-y-8 flex-1">
-                    <div className="flex flex-col gap-4">
-                       <span className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-bold">Subdomains Map ({subdomains.length})</span>
-                       <div className="flex flex-wrap gap-2">
-                         {subdomains.map((sub, i) => (
-                           <span key={i} className="bg-white/5 text-[9px] px-2 py-1 rounded border border-white/10 text-white/60 font-mono hover:text-emerald-400 transition-colors cursor-crosshair">
-                             {sub.host}
-                           </span>
-                         ))}
-                       </div>
-                    </div>
+              <Card className="bg-[#0A0A0A] border-white/5 overflow-hidden flex-1">
+                <Table>
+                  <TableHeader className="bg-black/40">
+                    <TableRow className="border-white/5">
+                      <TableHead className="text-[10px] text-white/40 uppercase font-mono">Host FQDN</TableHead>
+                      <TableHead className="text-[10px] text-white/40 uppercase font-mono">Status</TableHead>
+                      <TableHead className="text-[10px] text-white/40 uppercase font-mono">Resolved IP</TableHead>
+                      <TableHead className="text-[10px] text-white/40 uppercase font-mono text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {subdomains.length > 0 ? (
+                      subdomains.map((sub, i) => (
+                        <TableRow key={i} className="border-white/5 hover:bg-white/[0.02]">
+                          <TableCell className="font-mono text-xs text-white/80">{sub.host}</TableCell>
+                          <TableCell>
+                            <span className="bg-emerald-500/10 text-emerald-500 text-[9px] px-2 py-0.5 rounded font-bold uppercase">{sub.status}</span>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs text-white/40">{sub.ip}</TableCell>
+                          <TableCell className="text-right">
+                             <Button variant="ghost" className="h-8 w-8 p-0 hover:text-emerald-500"><ExternalLink className="w-4 h-4" /></Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-64 text-center text-white/20 italic font-mono text-xs">
+                          No subdomain mapping data available. Run a scan to populate.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </Card>
+            </motion.div>
+          )}
 
-                    <div className="bg-white/5 rounded-xl p-5 border border-white/10 hover:border-emerald-500/30 transition-all">
-                       <div className="flex items-center justify-between mb-4">
-                         <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">Security Report Engine</span>
-                         <Download className="w-4 h-4 text-emerald-500" />
-                       </div>
-                       <p className="text-[10px] text-white/40 leading-relaxed mb-6 italic">
-                         Automated generation of vulnerability intelligence across {activeScan.findings.length} critical vectors and server origin headers.
-                       </p>
-                       <Button onClick={generatePDF} className="w-full py-2 bg-white/5 border border-white/20 hover:bg-emerald-500 hover:text-black text-[10px] uppercase tracking-widest font-bold transition-all h-9 rounded-none">
-                         Download Intelligence Report
-                       </Button>
-                    </div>
-
-                    <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-5">
-                       <h3 className="text-[10px] font-bold uppercase tracking-widest text-emerald-500 mb-3 flex items-center gap-2">
-                         <Loader2 className="w-3 h-3 animate-spin" /> AI Auditor Recommendations
-                       </h3>
-                       <ScrollArea className="h-48">
-                         <p className="text-[11px] text-white/50 leading-relaxed whitespace-pre-line font-mono pr-4">
-                           {aiInsight || "Awaiting intelligence processing..."}
-                         </p>
-                       </ScrollArea>
-                    </div>
-                  </div>
-
-                  <div className="mt-8 pt-6 border-t border-white/5 space-y-4">
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-white/30 uppercase tracking-widest">Res. Time</span>
-                      <span className="text-emerald-500">{activeScan.responseTime}ms</span>
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono">
-                      <span className="text-white/30 uppercase tracking-widest">Server Status</span>
-                      <span className="text-emerald-500">{activeScan.status} OK</span>
-                    </div>
-                  </div>
-                </Card>
-
-                <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-5 flex items-center justify-between group cursor-help">
-                   <div className="flex items-center gap-3">
-                      <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(244,63,94,0.5)]"></div>
-                      <span className="text-[10px] font-bold text-rose-500 uppercase tracking-[0.3em]">Breach Alert Active</span>
+          {activeView === 'reports' && (
+            <motion.div 
+              key="reports"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col gap-8"
+            >
+              <h2 className="text-2xl font-serif italic text-white">Historical Intelligence Reports</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {activeScan ? (
+                   <Card className="bg-[#0A0A0A] border-emerald-500/30 p-6 flex flex-col gap-4 relative group overflow-hidden">
+                     <div className="absolute inset-x-0 top-0 h-1 bg-emerald-500" />
+                     <div className="flex justify-between items-start">
+                        <div className="flex flex-col">
+                           <span className="text-lg font-bold text-white font-mono break-all pr-8 uppercase">{activeScan.url.replace(/^https?:\/\//, '')}</span>
+                           <span className="text-[10px] text-white/40 font-mono mt-1 uppercase">Generated: {new Date().toLocaleDateString()}</span>
+                        </div>
+                        <Badge className="bg-rose-500 text-white border-none text-[9px]">{activeScan.findings.length} VULNS</Badge>
+                     </div>
+                     <Separator className="bg-white/5" />
+                     <p className="text-[10px] text-white/40 leading-relaxed italic">
+                        Passive reconnaissance report covering security headers, SSL status, and attack surface mapping.
+                     </p>
+                     <Button onClick={generatePDF} className="mt-4 w-full bg-white/5 border border-white/20 hover:bg-emerald-500 hover:text-black font-bold uppercase tracking-widest text-[9px] h-10 transition-all rounded-none">
+                        Export New PDF Bundle
+                     </Button>
+                   </Card>
+                ) : (
+                   <div className="col-span-full h-96 border border-dashed border-white/10 flex flex-col items-center justify-center opacity-30 mt-12 rounded-xl">
+                      <FileText className="w-16 h-16 mb-4" />
+                      <p className="font-mono text-xs uppercase tracking-widest">Archive Vault Empty</p>
                    </div>
-                   <span className="text-[9px] bg-rose-500 text-white px-3 py-0.5 rounded uppercase font-bold tracking-widest">Urgent</span>
-                </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {activeView === 'settings' && (
+            <motion.div 
+              key="settings"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="flex-1 flex flex-col gap-8"
+            >
+              <h2 className="text-2xl font-serif italic text-white underline decoration-emerald-500/30 underline-offset-8">System Configuration</h2>
+              <div className="max-w-2xl space-y-12">
+                <section className="space-y-4">
+                   <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-500">API Gateway</h3>
+                   <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl space-y-6">
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Gemini AI Intelligence Key</label>
+                        <div className="flex gap-4">
+                          <Input value="••••••••••••••••••••••••" readOnly className="bg-black border-white/10 font-mono text-emerald-500/50" />
+                          <Button variant="outline" className="border-white/10 hover:bg-emerald-500 hover:text-black transition-all">Rotated</Button>
+                        </div>
+                      </div>
+                   </div>
+                </section>
+
+                <section className="space-y-4">
+                   <h3 className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-500">Engine Parameters</h3>
+                   <div className="bg-[#0A0A0A] border border-white/5 p-6 rounded-xl space-y-4">
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 group hover:border-emerald-500/30 transition-all">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-white uppercase tracking-widest">Aggressive Recursive Scan</span>
+                          <span className="text-[9px] text-white/30 italic uppercase font-mono">High depth mapping of all subdirectories</span>
+                        </div>
+                        <div className="w-10 h-5 bg-emerald-500/20 rounded-full relative p-1 cursor-not-allowed">
+                           <div className="w-3 h-3 bg-emerald-500 rounded-full translate-x-5" />
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-white/5 rounded-lg border border-white/5 group hover:border-emerald-500/30 transition-all opacity-50">
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-bold text-white uppercase tracking-widest">Auto-Exploit Simulation</span>
+                          <span className="text-[9px] text-white/30 italic uppercase font-mono">Requires Level 5 Authorization</span>
+                        </div>
+                        <div className="w-10 h-5 bg-white/10 rounded-full relative p-1 cursor-wait">
+                           <div className="w-3 h-3 bg-white/20 rounded-full translate-x-0" />
+                        </div>
+                      </div>
+                   </div>
+                </section>
               </div>
             </motion.div>
           )}
