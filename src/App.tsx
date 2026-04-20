@@ -89,6 +89,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeScan, setActiveScan] = useState<ScanResult | null>(null);
   const [subdomains, setSubdomains] = useState<Subdomain[]>([]);
+  const [subdomainSource, setSubdomainSource] = useState<string>('');
   const [aiInsight, setAiInsight] = useState<string>('');
   const [scanProgress, setScanProgress] = useState(0);
   const [isAuthorized, setIsAuthorized] = useState(true);
@@ -130,6 +131,7 @@ export default function App() {
         });
         const subData = await subRes.json();
         setSubdomains(subData.subdomains);
+        setSubdomainSource(subData.source || 'Standard Intelligence');
         setScanProgress(80);
 
         // 3. AI Analysis
@@ -534,7 +536,14 @@ export default function App() {
             >
               <h2 className="text-2xl font-serif italic text-white flex items-center gap-4">
                 Domain Surface Mapping
-                <Badge variant="outline" className="text-[9px] uppercase border-emerald-500/30 text-emerald-500">Active Recon</Badge>
+                <div className="flex gap-2">
+                  <Badge variant="outline" className="text-[9px] uppercase border-emerald-500/30 text-emerald-500 font-mono tracking-tighter">
+                    {subdomainSource || 'Ready'}
+                  </Badge>
+                  <Badge variant="outline" className="text-[9px] uppercase border-white/10 text-white/40 font-mono tracking-tighter">
+                    Active Recon
+                  </Badge>
+                </div>
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <Card className="bg-[#0A0A0A] border-white/5 p-6 flex flex-col">

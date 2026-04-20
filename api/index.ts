@@ -153,21 +153,59 @@ app.post("/api/scan", async (req: Request, res: Response) => {
   }
 });
 
-// Reusable Subdomains Logic
+// Real-world DNS Enumeration Logic
 app.post("/api/subdomains", async (req: Request, res: Response) => {
   const { domain } = req.body;
   if (!domain) return res.status(400).json({ error: "Domain is required" });
 
-  const root = domain.replace(/^https?:\/\//, '').split('/')[0];
-  const commonPrefixes = ['www', 'api', 'dev', 'staging', 'mail', 'admin', 'test', 'portal', 'm', 'docs'];
+  const root = domain.replace(/^https?:\/\//, '').split('/')[0].replace('www.', '');
   
-  const subdomains = commonPrefixes.map(p => ({
-    host: `${p}.${root}`,
-    status: Math.random() > 0.4 ? 'Active' : 'Unreachable',
-    ip: `192.168.1.${Math.floor(Math.random() * 254)}`,
-  })).filter(s => s.status === 'Active');
+  try {
+    // Query HackerTarget public DNS service for real subdomain/IP records
+    const htRes = await axios.get(`https://api.hackertarget.com/hostsearch/?q=${root}`, { 
+      timeout: 7000,
+      headers: { 'User-Agent': 'SecurifiAudit/1.0' }
+    });
 
-  res.json({ domain: root, subdomains });
+    if (typeof htRes.data === 'string' && !htRes.data.includes('error')) {
+      const lines = htRes.data.split('\n');
+      const realSubdomains = lines.map((line: string) => {
+        const [host, ip] = line.split(',');
+        if (host && ip) {
+          return {
+            host: host.trim(),
+            ip: ip.trim(),
+            status: 'Active'
+          };
+        }
+        return null;
+      }).filter(Boolean);
+
+      if (realSubdomains.length > 0) {
+        return res.json({ 
+          domain: root, 
+          subdomains: realSubdomains.slice(0, 50),
+          source: 'HackerTarget DNS Intelligence'
+        });
+      }
+    }
+  } catch (error) {
+    console.warn("External DNS enumeration failed, falling back to local simulation:", error);
+  }
+
+  // Local passive fallback (if service is unavailable)
+  const commonPrefixes = ['www', 'api', 'dev', 'staging', 'mail', 'admin', 'test', 'portal', 'm', 'docs', 'secure', 'vpn', 'cloud'];
+  const simulated = commonPrefixes.map(p => ({
+    host: `${p}.${root}`,
+    status: 'Simulated',
+    ip: `10.0.0.${Math.floor(Math.random() * 254)}`,
+  }));
+
+  res.json({ 
+    domain: root, 
+    subdomains: simulated,
+    source: 'Passive Fallback Engine' 
+  });
 });
 
 export default app;
